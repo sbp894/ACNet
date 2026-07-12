@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+acnet_demo.png
+# demo output figures land next to the input wav
+examples/*.png
+.DS_Store
+.idea/
+# local ESC50 verification; not part of the release
+validation/

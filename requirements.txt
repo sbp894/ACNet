@@ -1,0 +1,13 @@
+# ACNet standalone runtime dependencies.
+#
+#   conda create -n acnet python=3.11
+#   conda activate acnet
+#   pip install -r requirements.txt
+#
+# Loose lower bounds; any recent build works. For GPU, install the CUDA build of
+# torch/torchaudio per https://pytorch.org (the versions must match each other).
+
+torch>=2.0
+torchaudio>=2.0   # Resample transform only (wav decoding uses the stdlib `wave` module)
+numpy>=1.24
+matplotlib>=3.7   # only needed for the demo plot
