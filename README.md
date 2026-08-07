@@ -62,6 +62,36 @@ psth = model.predict_psth('examples/example_esc50_clip.wav')
 You can also pass a waveform directly: `model.get_mf_embeddings(waveform, fs=fs)`
 where `waveform` is a `(1, n_samples)` tensor.
 
+## Running on a NEMS recording object
+
+If you already have a NEMS recording, its `stim` signal is a gammatonegram and
+can go straight into the backbone — no need to re-derive it from the wavs:
+
+```python
+stim = rec['stim'].rasterize()
+x = stim.extract_epochs(['STIM_seq0582.wav'])['STIM_seq0582.wav'][0]  # (nCF, time)
+
+emb, model_input = model.get_mf_embeddings_from_gtg(x, gtg_compress='sqrt')
+psth = model.predict_psth_from_gtg(x, gtg_compress='sqrt')
+```
+
+`gtg_compress='sqrt'` matters: `nems_lbhb.runclass.NAT_stim` returns
+**sqrt(magnitude)** (`np.abs(s)**0.5`), whereas ACNet's input is
+`log10x(magnitude)`. The method squares first, then applies the model's own
+compression, so the two never get double- or under-compressed.
+
+To make ACNet's *own* front end reproduce that stim from the wavs, the level
+path has to match the one baphy used — `lbhb_mode=True` with
+`level_mode='approx'`, which is **not** the default:
+
+```python
+model.set_bnt_mode(overall_db=65, fixed_amp_scale=250)   # from the site's exptparams
+model.update_audio_process({'stim_duration_s': 18.0})    # trial Duration; pads short wavs
+```
+
+`demo_ACNet_on_nems_object.py` does all of this against a real BNT recording and
+verifies the match; see the Demo section below.
+
 ## Demo
 
 ```bash
@@ -75,6 +105,24 @@ base name (e.g. `examples/example_esc50_clip.png`, 300 dpi): gammatonegram, ACNe
 embeddings, and (optionally) predicted neural PSTHs sorted by test-set prediction
 quality.
 
+A second demo checks ACNet against NEMS (needs `nems_lbhb` + celldb, so it runs
+in the `nems2026` env rather than the standalone `acnet` env):
+
+```bash
+python demo_ACNet_on_nems_object.py
+```
+
+It loads a BNT recording, compares NEMS's `stim` gammatonegram with the one
+ACNet's own front end builds from the same wavs, and pushes both through the
+backbone. Measured on `REI003a07_p_BNT.m`: with `nems_match=True` the two agree
+to **r = 1.00000000** on the gammatonegram, the manifold and the predicted PSTHs
+(worst relative error ~1e-4, pure float32-vs-float64). With the default settings
+the agreement is r = 0.9999, and the whole of that gap is the resampler —
+`scipy.signal.resample` in NEMS vs a torchaudio polyphase resampler here —
+which shows up only in the highest CF channel, at the 20 kHz Nyquist. ACNet's
+default is deliberately left alone, because it is the one its training
+gammatonegrams were built with.
+
 ## Files
 
 | File | Purpose |
@@ -82,6 +130,7 @@ quality.
 | `acnet_model.py` | Model classes, audio front end, and `load_acnet()`. |
 | `gtgram.py`, `gtg_filters.py` | Self-contained gammatonegram front end. |
 | `demo_acnet_embeddings.py` | Runnable demo (figure above). |
+| `demo_ACNet_on_nems_object.py` | Runs ACNet on a NEMS recording and verifies the front end against NEMS's own gammatonegram. |
 | `weights/acnet_v1.pt` | Trained weights + config + per-neuron `cell_rtest`. |
 | `examples/example_esc50_clip.wav` | Short example clip (ESC-50, CC BY-NC). |
 

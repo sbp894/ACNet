@@ -88,12 +88,16 @@ def remove_clicks(w, max_threshold=50, verbose=False):
     return w_clean
 
 
-def _load_wav(path):
+def _load_wav(path, int16_scale=32768.0):
     """Decode a WAV file to a mono ``(1, n_samples)`` float32 tensor in [-1, 1].
 
     Parses the RIFF container directly so the package needs no audio-decoding
     dependency (soundfile / torchcodec / ffmpeg). Supports integer PCM
     (8/16/24/32-bit) and IEEE-float (32/64-bit) WAV, including WAVE_FORMAT_EXTENSIBLE.
+
+    `int16_scale` is the divisor for 16-bit PCM. The default 32768 is the
+    full-scale convention; pass 32767 to reproduce NEMS (`nems_lbhb.runclass`
+    divides int16 by 32767). The two differ by 3e-5 relative.
     """
     with open(path, 'rb') as f:
         riff = f.read()
@@ -122,7 +126,7 @@ def _load_wav(path):
         if bits == 8:          # 8-bit PCM is unsigned
             data = (np.frombuffer(raw, dtype=np.uint8).astype(np.float32) - 128.0) / 128.0
         elif bits == 16:
-            data = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+            data = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / int16_scale
         elif bits == 24:
             b = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 3).astype(np.int32)
             ints = b[:, 0] | (b[:, 1] << 8) | (b[:, 2] << 16)
@@ -145,13 +149,21 @@ def _load_wav(path):
 
 def nems_audio_preprocess(sig, fs_stim, fs_gtg, f_max=20e3, duration=None, fixed_amp_scale=250,
                           lbhb_mode=False, overall_db=65, level_mode='exact', device='cpu',
-                          verbose=False):
+                          verbose=False, nems_match=False):
     """
     Resample, ramp and level-scale a waveform prior to the gammatone filterbank.
 
     For inference outside LBHB set `lbhb_mode=False`; then `level_mode` must be
     'exact' and the signal is scaled so its RMS matches `overall_db` dB SPL
     (reference 20 uPa).
+
+    `nems_match=False` (the default) is the path the released ACNet weights were
+    trained on: a torchaudio polyphase resampler and a periodic Hann ramp.
+    `nems_match=True` swaps in the two choices `nems_lbhb.runclass.NAT_stim`
+    makes instead -- `scipy.signal.resample` (FFT) and a symmetric `np.hanning`
+    ramp -- so this function reproduces a NEMS recording's `stim` signal to
+    float32 precision. It needs scipy and is only for validating against NEMS;
+    it does NOT reproduce the model's training inputs.
     """
     sig = sig.to(device)
     sig = sig.squeeze(0)  # assume mono
@@ -168,11 +180,30 @@ def nems_audio_preprocess(sig, fs_stim, fs_gtg, f_max=20e3, duration=None, fixed
         sig = torch.nn.functional.pad(sig, (0, int(fs_stim * duration) - len(sig)))
 
     if fs_stim != fs0:
-        resampler = torchaudio.transforms.Resample(orig_freq=fs_stim, new_freq=fs0).to(device)
-        sig = resampler(sig)
+        if nems_match:
+            # scipy's FFT resampler, as used by NAT_stim. Differs audibly little
+            # from the polyphase one (waveform r=0.9993) but enough to move the
+            # gammatonegram by a few percent, so it must be matched exactly.
+            from scipy.signal import resample as _scipy_resample
+            n_out = int(len(sig) / fs_stim * fs0)
+            sig_np = _scipy_resample(sig.detach().cpu().numpy().astype(np.float64), n_out)
+            sig = torch.tensor(sig_np, dtype=torch.float32, device=device)
+        else:
+            resampler = torchaudio.transforms.Resample(orig_freq=fs_stim, new_freq=fs0).to(device)
+            sig = resampler(sig)
+
+    if duration is not None:
+        # NAT_stim truncates to floor(Duration*fs0) after resampling, and only then
+        # ramps -- so the offset ramp has to land on the truncated end, not before it.
+        sig = sig[:int(np.floor(duration * fs0))]
 
     # 5 ms onset/offset ramp
-    ramp = torch.hann_window(int(.005 * fs0 * 2))[:int(.005 * fs0)].to(device)
+    if nems_match:
+        ramp_np = np.hanning(.005 * fs0 * 2)  # symmetric, as in NAT_stim
+        ramp = torch.tensor(ramp_np[:int(np.floor(len(ramp_np) / 2))],
+                            dtype=sig.dtype, device=device)
+    else:
+        ramp = torch.hann_window(int(.005 * fs0 * 2))[:int(.005 * fs0)].to(device)
     sig[:len(ramp)] *= ramp
     sig[-len(ramp):] *= torch.flip(ramp, [0])
 
@@ -204,7 +235,8 @@ class GammatoneFilterbankProcessing(nn.Module):
 
     def __init__(self, num_cfs=32, f_min=200.0, f_max=20e3, fs_gtg=100.0, overall_db=65.0,
                  fixed_amp_scale=250.0, keep_pre_s=0., stim_dur_after_onset=None,
-                 compress='log10x', level_mode='exact', lbhb_mode=False, verbose=False):
+                 compress='log10x', level_mode='exact', lbhb_mode=False, nems_match=False,
+                 stim_duration_s=None, verbose=False):
         super().__init__()
         self.num_cfs = num_cfs
         self.f_min = f_min
@@ -217,7 +249,27 @@ class GammatoneFilterbankProcessing(nn.Module):
         self.compress = compress
         self.level_mode = level_mode
         self.lbhb_mode = lbhb_mode
+        self.nems_match = nems_match
+        # Zero-pad the WAVEFORM out to this many seconds before filtering, the way
+        # NAT_stim pads every clip to the trial's `Duration`. Not the same as
+        # `stim_dur_after_onset`, which zero-pads the finished gammatonegram: padding
+        # the waveform lets the filterbank ring out into the added bins, padding the
+        # gammatonegram does not. BNT wavs are 17.79 s against an 18 s Duration, so
+        # this is what makes ACNet's output line up with a NEMS stim signal.
+        self.stim_duration_s = stim_duration_s
         self.device = best_device()
+
+    def apply_compress(self, x_mag):
+        """Apply `self.compress` to a raw (uncompressed) gammatonegram magnitude."""
+        if self.compress == 'sqrt':
+            return torch.sqrt(torch.abs(x_mag))
+        elif self.compress == 'log10x':
+            return 0.5 * torch.log(1 + 10 * x_mag)
+        elif self.compress == 'log50x':
+            return 0.5 * torch.log10(1 + 50 * x_mag)
+        elif self.compress == 'log2x':
+            return torch.log(1 + 2 * x_mag)
+        raise ValueError(f"Unknown compression '{self.compress}'")
 
     def forward(self, sig, fs_stim, overall_db=None, fixed_amp_scale=None):
         if overall_db is not None:
@@ -227,21 +279,13 @@ class GammatoneFilterbankProcessing(nn.Module):
 
         w, fs_stim = nems_audio_preprocess(
             sig, fs_stim, self.fs_gtg, self.f_max, overall_db=self.overall_db, lbhb_mode=self.lbhb_mode,
-            fixed_amp_scale=self.fixed_amp_scale, device=self.device, level_mode=self.level_mode)
+            fixed_amp_scale=self.fixed_amp_scale, device=self.device, level_mode=self.level_mode,
+            nems_match=self.nems_match, duration=self.stim_duration_s)
 
         x_gtg_pt = gtgram(w, fs_stim, window_time=1 / self.fs_gtg, hop_time=1 / self.fs_gtg,
                           channels=self.num_cfs, f_min=self.f_min, f_max=self.f_max, device=self.device)
 
-        if self.compress == 'sqrt':
-            x_gtg_pt = torch.sqrt(torch.abs(x_gtg_pt))
-        elif self.compress == 'log10x':
-            x_gtg_pt = 0.5 * torch.log(1 + 10 * x_gtg_pt)
-        elif self.compress == 'log50x':
-            x_gtg_pt = 0.5 * torch.log10(1 + 50 * x_gtg_pt)
-        elif self.compress == 'log2x':
-            x_gtg_pt = torch.log(1 + 2 * x_gtg_pt)
-        else:
-            raise ValueError(f"Unknown compression '{self.compress}'")
+        x_gtg_pt = self.apply_compress(x_gtg_pt)
 
         # Optional trimming / padding around stimulus onset
         if self.stim_dur_after_onset is not None:
@@ -392,6 +436,8 @@ DEFAULT_CONFIG = {
     "compress": "log10x",
     "level_mode": "exact",
     "lbhb_mode": False,
+    "nems_match": False,
+    "stim_duration_s": None,
 }
 
 
@@ -426,7 +472,8 @@ class ACNet(nn.Module):
             num_cfs=cfg["num_cfs"], f_min=cfg["f_min"], f_max=cfg["f_max"], fs_gtg=cfg["fs_gtg"],
             overall_db=cfg["overall_db"], fixed_amp_scale=cfg["fixed_amp_scale"],
             keep_pre_s=cfg["keep_pre_s"], stim_dur_after_onset=cfg["stim_dur_after_onset"],
-            compress=cfg["compress"], level_mode=cfg["level_mode"], lbhb_mode=cfg["lbhb_mode"])
+            compress=cfg["compress"], level_mode=cfg["level_mode"], lbhb_mode=cfg["lbhb_mode"],
+            nems_match=cfg["nems_match"], stim_duration_s=cfg["stim_duration_s"])
 
         # Shared backbone: names match the original checkpoint (BlockCWR{i}).
         self.layers_shared = nn.Sequential()
@@ -461,7 +508,8 @@ class ACNet(nn.Module):
         """Update a subset of audio-front-end params (e.g. `overall_db`)."""
         if params_audio_proc:
             allowed = {'overall_db', 'fixed_amp_scale', 'level_mode', 'lbhb_mode', 'keep_pre_s',
-                       'stim_dur_after_onset', 'compress', 'f_min', 'f_max', 'fs_gtg', 'num_cfs'}
+                       'stim_dur_after_onset', 'compress', 'f_min', 'f_max', 'fs_gtg', 'num_cfs',
+                       'nems_match', 'stim_duration_s'}
             for key, val in params_audio_proc.items():
                 if key in allowed:
                     setattr(self.audio_process, key, val)
@@ -469,6 +517,20 @@ class ACNet(nn.Module):
                     if verbose:
                         print(f"\t -> Updated {key} to {val}")
         self.audio_process.device = self.device
+
+    def set_bnt_mode(self, overall_db, fixed_amp_scale, nems_match=False, verbose=False):
+        """Configure the front end the way the BNT training stimuli were built.
+
+        The BNT/baphy path is `remove_clicks(w * FixedAmpScale, 15)` followed by
+        a fixed `10**((80 - OveralldB)/20)` gain -- i.e. `lbhb_mode=True` with
+        `level_mode='approx'`. Both differ from the defaults, which target
+        arbitrary wavs at a known dB SPL. Take `overall_db` / `fixed_amp_scale`
+        from the recording's exptparams (`OveralldB`, `ReferenceHandle`
+        `FixedAmpScale`), never from a hardcoded constant -- they vary by site.
+        """
+        self.update_audio_process(
+            {'lbhb_mode': True, 'level_mode': 'approx', 'overall_db': overall_db,
+             'fixed_amp_scale': fixed_amp_scale, 'nems_match': nems_match}, verbose=verbose)
 
     def _to_gtg(self, x, fs=None):
         # Always compute the gammatonegram on the same device as the weights,
@@ -478,7 +540,9 @@ class ACNet(nn.Module):
         self.audio_process.device = dev
 
         if isinstance(x, str):
-            waveform, fs = _load_wav(x)  # stdlib wave, no torchaudio/torchcodec backend
+            # 32767 rather than 32768 when reproducing NEMS bit-for-bit; see _load_wav.
+            int16_scale = 32767.0 if self.audio_process.nems_match else 32768.0
+            waveform, fs = _load_wav(x, int16_scale=int16_scale)
         elif isinstance(x, torch.Tensor) and fs is not None:
             waveform = x
         else:
@@ -495,6 +559,65 @@ class ACNet(nn.Module):
         gtg = self._to_gtg(x, fs)
         shared_rep = self.layers_shared(gtg)
         return shared_rep, gtg
+
+    def gtg_to_model_input(self, gtg, gtg_compress='sqrt'):
+        """Turn an externally computed gammatonegram into ACNet's model input.
+
+        Use this for the `stim` signal of a NEMS recording, which
+        `nems_lbhb.runclass.NAT_stim` returns already **sqrt-compressed**
+        (`np.abs(s)**0.5`), whereas ACNet's input is `compress(magnitude)` with
+        `compress='log10x'`. `gtg_compress` names the compression already
+        applied to `gtg` -- it is undone to recover magnitude, then the model's
+        own `self.audio_process.compress` is applied.
+
+        Parameters
+        ----------
+        gtg : array or tensor, (time, num_cfs) or (num_cfs, time).
+            Orientation is inferred from `num_cfs`; if both dims equal
+            `num_cfs`, (time, num_cfs) is assumed.
+        gtg_compress : {'sqrt', 'none'}.
+            'sqrt' for a NEMS `stim` signal, 'none' for a raw magnitude gtgram.
+
+        Returns
+        -------
+        torch.Tensor, (time, num_cfs), on the model's device.
+        """
+        dev = self._device()
+        if not isinstance(gtg, torch.Tensor):
+            gtg = torch.as_tensor(np.asarray(gtg, dtype=np.float32))
+        gtg = gtg.to(dev).float().squeeze()
+        if gtg.dim() != 2:
+            raise ValueError(f"Expected a 2-D gammatonegram, got shape {tuple(gtg.shape)}")
+
+        n_cfs = self.audio_process.num_cfs
+        if gtg.shape[-1] != n_cfs:
+            if gtg.shape[0] != n_cfs:
+                raise ValueError(f"Neither axis of {tuple(gtg.shape)} matches num_cfs={n_cfs}")
+            gtg = gtg.T  # (num_cfs, time) -> (time, num_cfs)
+
+        if gtg_compress == 'sqrt':
+            x_mag = gtg ** 2
+        elif gtg_compress in ('none', None, 'linear'):
+            x_mag = gtg
+        else:
+            raise ValueError(f"Unknown gtg_compress '{gtg_compress}'")
+        return self.audio_process.apply_compress(x_mag)
+
+    def get_mf_embeddings_from_gtg(self, gtg, gtg_compress='sqrt'):
+        """`get_mf_embeddings` for a gammatonegram computed outside the model.
+
+        Returns (manifold_rep, model_input); see `gtg_to_model_input`.
+        """
+        x = self.gtg_to_model_input(gtg, gtg_compress)
+        return self.layers_shared(x), x
+
+    def predict_psth_from_gtg(self, gtg, gtg_compress='sqrt', return_embeddings=False):
+        """`predict_psth` for a gammatonegram computed outside the model."""
+        shared_rep, x = self.get_mf_embeddings_from_gtg(gtg, gtg_compress)
+        psth = self.readout_nl(self.readout_linear(shared_rep)).squeeze(0)
+        if return_embeddings:
+            return psth, shared_rep, x
+        return psth
 
     def predict_psth(self, x, fs=None, return_embeddings=False):
         """

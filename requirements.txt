@@ -11,3 +11,4 @@ torch>=2.0
 torchaudio>=2.0   # Resample transform only (wav decoding uses the stdlib `wave` module)
 numpy>=1.24
 matplotlib>=3.7   # only needed for the demo plot
+scipy>=1.10       # only needed for nems_match=True (reproducing a NEMS stim signal)
