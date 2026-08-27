@@ -9,3 +9,6 @@ examples/*.png
 validation/
 # LBHB-internal demos/scripts; not part of the release
 lbhb_files/
+# rjob launch logs
+logs/
+manuscript/logs/

@@ -1,0 +1,39 @@
+[1/8] small pkls (r_test, stim coverage)
+[2/8] demo site gammatonegram + true PSTH
+      site=PRN015a idx=5/6 gtg=(32, 1900) cells=65 overall_db=65.0
+[3/8] published predicted PSTH + ResNet r_test
+      demo cells kept 65/65
+[4/8] r_test comparisons + Wilcoxon
+      ResNet vs LN: W=3989033.0, p=0.000e+00, n=2902, median diff=0.0924
+      ResNet vs CNN: W=3098060.0, p=2.537e-107, n=2902, median diff=0.0219
+[5/8] cvPCA (this loads the 758 MB neural file)
+      neural cvPCA extracted (2902,); 758 MB released
+      neural   alpha=1.075
+      resnet   alpha=1.472
+      LNmodel  alpha=1.537
+      CNNfull  alpha=1.401
+[6/8] ACNet provenance
+Loaded ACNet v1.0.0
+      cell names match nsites62_15: True; max |r_test diff|: 2.980e-08
+[7/8] resolving demo wav + fixed_amp_scale
+      6 val-wav candidates: ['00seq1.wav', '00seq2.wav', '00seq3.wav', '00seq4.wav', '00seq5_hand.wav', '00seq6_hand.wav']
+      00seq1.wav           r= 0.164536  shape=(32, 1900)
+      00seq2.wav           r= 0.015045  shape=(32, 1900)
+      00seq3.wav           r= 0.113794  shape=(32, 1900)
+      00seq4.wav           r= 0.005427  shape=(32, 1900)
+      00seq5_hand.wav      r= 0.294367  shape=(32, 1900)
+      00seq6_hand.wav      r= 0.999953  shape=(32, 1900)
+      -> demo_idx=5 is 00seq6_hand.wav (r=0.999953, runner-up 00seq5_hand.wav 0.294367)
+      nems_match=True  fas=  250.0  relRMSE=0.00007  r=1.000000
+      nems_match=False fas=  250.0  relRMSE=0.00811  r=0.999953
+      nems_match=False fas=  300.0  relRMSE=0.09458  r=0.999707
+      nems_match=True  fas=  300.0  relRMSE=0.09484  r=0.999754
+      nems_match=True  fas=  200.0  relRMSE=0.10503  r=0.999883
+      nems_match=False fas=  200.0  relRMSE=0.10584  r=0.999836
+      nems_match=True  fas=  150.0  relRMSE=0.22465  r=0.999550
+      nems_match=False fas=  150.0  relRMSE=0.22522  r=0.999501
+      -> fixed_amp_scale=250, nems_match=True, relRMSE=0.00007, r=1.000000
+[8/8] live ACNet predicted PSTH from the wav
+      wav-path vs published y_est: median per-cell r=0.9994, overall r=0.9988
+
+wrote /auto/users/satya/code/projects_getting_started/ACNet_v1/manuscript/data/fig1.pkl (4.41 MB)
