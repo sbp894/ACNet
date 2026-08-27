@@ -7,3 +7,5 @@ examples/*.png
 .idea/
 # local ESC50 verification; not part of the release
 validation/
+# LBHB-internal demos/scripts; not part of the release
+lbhb_files/
