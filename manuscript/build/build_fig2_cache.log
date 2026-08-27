@@ -1,0 +1,64 @@
+device=cuda  torch=2.9.0.dev20250811+cu128  numpy=2.3.1
+[1/8] validation-stimulus gammatonegram
+      02_BNTgtg_nems_CLT029c.pkl  val=(6, 1900, 32) -> stim_gtg=(11400, 32)
+[2/8] per-animal encoders -> concatenated-readout ACNet checkpoints
+  CLT: prefit keys=['cell_names', 'data_params', 'dir_struct', 'model_params', 'optim_params']
+      heads=19 cells=629 hidden=[60, 80, 100, 120, 140, 160] nl=dexp norm_1d=True compress=log10x
+level_mode: approx
+# of 
+ total params = 240450 
+ trainable params = 240450
+  LMD: prefit keys=['cell_names', 'data_params', 'dir_struct', 'model_params', 'optim_params']
+      heads=9 cells=769 hidden=[60, 80, 100, 120, 140, 160] nl=dexp norm_1d=True compress=log10x
+level_mode: approx
+# of 
+ total params = 263410 
+ trainable params = 263410
+  PRN: prefit keys=['cell_names', 'data_params', 'dir_struct', 'model_params', 'optim_params']
+      heads=30 cells=1448 hidden=[60, 80, 100, 120, 140, 160] nl=dexp norm_1d=True compress=log10x
+level_mode: approx
+# of 
+ total params = 374766 
+ trainable params = 374766
+  REI: prefit keys=['cell_names', 'data_params', 'dir_struct', 'model_params', 'optim_params']
+      heads=7 cells=682 hidden=[50, 60, 70, 80, 90, 100] nl=dexp norm_1d=True compress=log10x
+level_mode: approx
+# of 
+ total params = 135722 
+ trainable params = 135722
+      groups=['CLT', 'LMD', 'PRN', 'REI']
+[3/8] verifying the concatenated readout against the per-head originals
+      CLT: max|d embeddings|=0.000e+00  max|d psth|=2.831e-07 (4.9e-07 of full scale)  psth shape=(11400, 629)
+      LMD: max|d embeddings|=0.000e+00  max|d psth|=8.941e-08 (1.4e-07 of full scale)  psth shape=(11400, 769)
+      PRN: max|d embeddings|=0.000e+00  max|d psth|=1.192e-07 (1.8e-07 of full scale)  psth shape=(11400, 1448)
+      REI: max|d embeddings|=0.000e+00  max|d psth|=0.000e+00 (0.0e+00 of full scale)  psth shape=(11400, 682)
+[4/8] recorded PSTHs (this reads the 4.5 GB per-repeat archive)
+      [1/74] skip test_PSTH_CLT027c.pkl: 2 != 6 test stims
+      [60/74] skip test_PSTH_PRN064a.pkl: 1 < 5 reps
+      [61/74] skip test_PSTH_PRN065a.pkl: 1 < 5 reps
+      kept 71 sites, skipped 3
+      psth_all=(3837, 11400) cells=3837
+      keeping 3528/3837 cells (models span 3528 cells across 4 animals)
+[5/8] manifold embeddings, predicted PSTHs, PCA projections
+      CLT: cells=  629  nPC mf=  30 pred=  31 true= 301
+      LMD: cells=  769  nPC mf=  24 pred=  25 true= 372
+      PRN: cells= 1448  nPC mf=  11 pred=  20 true= 589
+      REI: cells=  682  nPC mf=  18 pred=  17 true= 374
+      stim (GTG): nPC=8
+[6/8] RDMs, RSA, noise ceiling
+      MF     mean=0.819
+      predR  mean=0.687
+      trueR  mean=0.556
+      MF.GTG mean=0.219
+      CLT  (  629 cells): r_half=0.912 -> r_full=0.954
+      LMD  (  769 cells): r_half=0.828 -> r_full=0.906
+      PRN  ( 1448 cells): r_half=0.885 -> r_full=0.939
+      REI  (  682 cells): r_half=0.759 -> r_full=0.863
+[7/8] stimulus bootstrap
+      [1s] cache MF_RSA_xanimals_bootstrap_mdlVE90_dataVE90_mse_nb1000_blk1_sub10_seed0.pkl: max|d ref| = 8.182e-07
+      [1s] 114 blocks, 1140 timepoints/resample
+      [19s] cache MF_RSA_xanimals_bootstrap_mdlVE90_dataVE90_mse_nb1000_blk19_sub10_seed0.pkl: max|d ref| = 8.182e-07
+      [19s] 6 blocks, 1140 timepoints/resample
+[8/8] writing cache
+
+wrote /auto/users/satya/code/projects_getting_started/ACNet_v1/manuscript/data/fig2.pkl.gz (37.84 MB)

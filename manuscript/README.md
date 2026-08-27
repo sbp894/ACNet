@@ -14,6 +14,7 @@ recording coverage — is pre-extracted, so no LBHB data mount is needed.
 ```bash
 cd manuscript
 python fig1.py            # -> figures/fig1.png (300 dpi)
+python fig2.py            # -> figures/fig2.png (300 dpi)
 ```
 
 Requirements: `numpy`, `scipy`, `matplotlib`, plus `torch`/`torchaudio` for the
@@ -36,11 +37,15 @@ live vs cached: gtg r=1.00000000  psth r=1.00000000  max|dPSTH|=1.14e-07
 ```
 manuscript/
 ├── fig1.py                     # the figure script
-├── data/fig1.pkl               # 4.3 MB: every number Fig1 plots + the demo waveform
-├── figures/fig1.png            # output
+├── fig2.py                     # the figure script
+├── rsa_lib.py                  # Fig2 analysis primitives, shared by fig2.py and its builder
+├── data/
+│   ├── fig1.pkl                # 4.3 MB: every number Fig1 plots + the demo waveform
+│   └── fig2.pkl.gz             # 38 MB: four encoders, the recorded PSTHs, the stimulus
+├── figures/                    # output PNGs
 └── build/
-    ├── build_fig1_cache.py     # one-time cache builder -- LBHB paths, not needed to plot
-    └── build_fig1_cache.log    # its output, kept as provenance
+    ├── build_fig<N>_cache.py   # one-time cache builders -- LBHB paths, not needed to plot
+    └── build_fig<N>_cache.log  # their output, kept as provenance
 ```
 
 `build/` is the only part that touches LBHB storage. It ran once; you do not need
@@ -65,5 +70,40 @@ checked against the values frozen at build time:
 ACNet vs LN:              W=3989033.0, p=0.000e+00,  n=2902, median diff=0.0924
 ACNet vs Single-site CNN: W=3098060.0, p=2.537e-107, n=2902, median diff=0.0219
 ```
+
+## What Fig2 shows
+
+Four per-animal encoders (CLT, LMD, PRN, REI) are run on the same held-out stimulus, and
+their representations are compared **across animals** by RSA over timepoints.
+
+| panel | content |
+|---|---|
+| RDM rows (LMD, REI) | timepoint x timepoint dissimilarity of the manifold, the predicted PSTHs and the recorded PSTHs, seriated by the manifold RDM |
+| stim RDM | the same for the stimulus gammatonegram itself |
+| bar | across-animal RSA: MF (manifold), predR (predicted PSTH), trueR (recorded PSTH), MF.GTG (manifold vs stimulus), with the stimulus-bootstrap 95% CI and the recorded-PSTH noise ceiling |
+
+`fig2.py` rebuilds each encoder from its cached weights, runs it, and asserts the result
+reproduces the cached bootstrap reference statistic before plotting anything. Expected
+output:
+
+```
+live vs cached (bootstrap reference, 1s blocks): ref_mf=2.35e-07  ref_pred=8.18e-07  ref_true=2.91e-09  ref_stim=4.94e-08
+```
+
+The claim the figure makes, recomputed and printed on every run:
+
+```
+MF 0.819  >  predR 0.687  >  trueR 0.556  >  MF.GTG 0.219      (n=6 animal pairs, n=4 for MF.GTG)
+MF - predR : +0.132  95% CI [+0.099, +0.153]   p<0.002 (stimulus bootstrap, 1 s blocks)
+MF - trueR : +0.263  95% CI [+0.213, +0.317]   p<0.002
+MF - MF.GTG: +0.600  95% CI [+0.563, +0.633]   p<0.002
+recorded-PSTH noise ceiling 0.915; trueR reaches 0.606 of it
+```
+
+Set `VERIFY_FULL_RSA = True` in `fig2.py` to re-derive those RSA numbers from
+full-resolution RDMs instead of reading them from the cache. It is off by default
+because it builds 13 distance matrices over 11400 timepoints -- tens of minutes and a
+few GB -- while the bootstrap-reference check above already exercises the live models
+end to end.
 
 See `WIKI.md` for provenance and the verification record.

@@ -106,6 +106,104 @@ stimulus boundary. It is not a discrepancy in the model.
   reorder the demo panel's rows. `leaf_order` is cached, so the shipped figure is
   stable; `meta['versions']['scipy']` records the version that produced it.
 
+## Fig2
+
+Built by `build/build_fig2_cache.py` on rhino, 2026-08-27. Full log in
+`build/build_fig2_cache.log`.
+
+**Ported from** `pytorch_models/MS_AcxManifold/Fig_MF_RSA_xanimals.py`.
+**Models:** `ResNetMT_animal_nemsGT_3stage_log10xComp/MT_svd_init_6L_v2_<ANIMAL>/`
+-- CLT `nsites19_2`, LMD `nsites9_2`, PRN `nsites30_2`, REI `nsites7_3`, all
+`stage3_fine`. SLJ (`nsites4_2`) is excluded here as it is in the source script: 4
+sites is too few for an animal-level manifold.
+**Stimulus:** the 6 held-out BNT stimuli of `02_BNTgtg_nems_CLT029c.pkl`, concatenated
+to 11400 bins at 100 Hz.
+**Analysis:** PCA to 90% variance (model and data alike), RDM = squared Euclidean
+distance between timepoints, RSA = Pearson r between RDM upper triangles.
+
+### What replaces what
+
+| source | size | what the figure uses |
+|---|---|---|
+| `tests_psth_data_each_rep/` (62 pickles) | **4.5 GB** | the rep-averaged PSTHs of 3528 cells |
+| 4x `*_model.pt` + 4x `*_data_pre_fit.pkl` | 13 MB | the four encoders |
+| `02_BNTgtg_nems_CLT029c.pkl` | 17 MB | one 11400 x 32 gammatonegram |
+| 2x `MF_RSA_xanimals_bootstrap_*.pkl` | 0.8 MB | both bootstrap distributions |
+| `PT_EncMdl_helpers_v2.py`, `sppy` | -- | model class, seriation, `dsearchnn` |
+
+`data/fig2.pkl.gz` is **38 MB** (gzip level 6; the PSTHs are float32 and compress ~5x
+because each cell's rep-averaged PSTH takes only a few dozen distinct values).
+
+### Things the builder resolves rather than assumes
+
+1. **The per-animal encoders are re-expressed in the released `ACNet` class.** Each was
+   trained as `MT_ResNet_v2` with one head per recording site; the builder concatenates
+   those heads into the single `Linear -> DEXP` readout the ACNet v1 export uses, so
+   `fig2.py` needs no internal model code. The conversion is verified on the real
+   stimulus before caching: shared-backbone embeddings are **bit-identical**, predicted
+   PSTHs agree to **max 2.8e-07** (one GEMM instead of 19, so float32 accumulates in a
+   different order).
+
+2. **The stimulus is fed to the backbone as stored, NOT through `gtg_to_model_input`.**
+   `save_nemsGTGram_BNT.py` stores the NEMS `stim` signal (sqrt-amplitude) and
+   `MultiTask_BNTDataSet_Site_Nems` applies no further compression before training, so
+   the stored signal *is* the domain these encoders were fitted in. Routing it through
+   the front end's `compress` would put them in a domain they never saw. Note this is a
+   different convention from Fig1's waveform path, which goes through the front end with
+   `compress='log10x'`; the `compress` recorded in these models' `data_params` says
+   `log10x` but nothing in the nemsGT data path ever applies it.
+
+3. **The recorded PSTHs cover exactly the cells the models were fitted to.** The shipped
+   arrays are restricted to the union of the four models' `prefit` cell names (3528 of
+   the 3837 cells that survive the >=6-test-stim and >=5-repeat filters), in the source
+   script's own file order, so `np.isin` returns the same relative ordering it did
+   there. The builder asserts per animal that the recorded and predicted cell counts
+   match -- a fitted cell missing from the saved PSTHs would otherwise leave the two
+   sides of a comparison over different cells.
+
+### Verification record
+
+| check | result |
+|---|---|
+| concatenated readout vs per-head original, embeddings | max abs diff **0** |
+| concatenated readout vs per-head original, predicted PSTH | max abs diff 2.8e-07 |
+| live models vs cached bootstrap reference (recomputed every run) | max 8.2e-07 |
+| live PC counts vs cached | exact, asserted per animal per signal |
+| pre-existing bootstrap cache vs freshly computed reference | 8.2e-07, reused |
+| same-format panels equal in size | asserted in `fig2.py` via `get_window_extent` |
+
+Measured values (identical to the source script):
+
+```
+MF 0.819   predR 0.687   trueR 0.556   MF.GTG 0.219
+noise ceiling (recorded PSTH, split-half + Spearman-Brown): CLT .954  LMD .906  PRN .939  REI .863
+mean pairwise ceiling 0.915; trueR reaches 0.606 of it
+nPC at 90% var -- MF 11-30, predicted PSTH 17-31, recorded PSTH 301-589, stimulus 8
+```
+
+### What the statistics can and cannot say
+
+With 4 animals there are 6 animal pairs, and each animal sits in 3 of them. The exact
+paired sign-flip test bottoms out at p=0.031 and the dependence-respecting dyadic
+sign-flip at **p=0.125**, so no animal-level test here can reach p<0.05. A
+non-significant animal-level result is n-limited, not evidence of no difference. The
+inferential claim comes from the stimulus bootstrap, which resamples the stimulus
+material (1 s blocks primary, 19 s whole stimuli as the conservative check) and leaves
+the animals fixed. Both block sizes exclude 0 for all three contrasts.
+
+### What would invalidate this cache
+
+- Retraining any per-animal encoder -- `fig2.py`'s bootstrap-reference assertion catches
+  it, as does the per-animal PC-count assertion.
+- Regenerating the BNT gammatonegrams with different `keep_pre_s` /
+  `stim_dur_after_onset`, which changes the 11400-bin timepoint axis.
+- A scipy upgrade changing `scipy.cluster.hierarchy` tie-breaking, which would reorder
+  the displayed RDMs. Unlike Fig1's `leaf_order`, the Fig2 seriation is recomputed at
+  plot time (it depends on the live models), so the shipped PNG is the reference;
+  `meta['versions']['scipy']` records the version that produced it.
+- Changing `MODEL_VAREXP`, `DATA_VAREXP` or `SIM_MEASURE` in `rsa_lib.py`. These are the
+  figure's identity, not free parameters; the cached bootstrap was built under them.
+
 ## Related
 
 - `../README.md` — the ACNet model itself and its public API.
