@@ -165,9 +165,9 @@ demo_x = left_x[3] + PANEL_W_CM + BLOCK_GAP_CM
 
 ax_schema = add_axes_cm(fig, left_x[0], row_schema_y,
                         4 * PANEL_W_CM + 3 * GAP_X_CM, SCHEMA_H_CM)
-ax_coverage, ax_rtest_ln, ax_rtest_cnn, ax_cumvar = [
+ax_coverage, ax_rtest_cnn, ax_rtest_ln, ax_cumvar = [
     add_axes_cm(fig, x, row_summary_y, PANEL_W_CM, PANEL_H_CM) for x in left_x]
-ax_pca_neural, ax_pca_multisite, ax_pca_ln, ax_pca_cnn = [
+ax_pca_neural, ax_pca_multisite, ax_pca_cnn, ax_pca_ln = [
     add_axes_cm(fig, x, row_pca_y, PANEL_W_CM, PANEL_H_CM) for x in left_x]
 ax_demo_gtg, ax_demo_true, ax_demo_pred = [
     add_axes_cm(fig, demo_x, FIG_H_CM - MARGIN_T_CM - (i + 1) * DEMO_H_CM - i * DEMO_GAP_Y_CM,
@@ -196,10 +196,10 @@ SKIP_N = rtest['skip_n']
 MRK = 4
 rtest_ticks, rtest_lim = [0, .5, 1], [-0.01, 1.01]
 for ax, base, base_mu, resnet, resnet_mu, xlabel in [
-        (ax_rtest_ln, rtest['ln'], rtest['ln_site_mu'], rtest['ln_matched_resnet'],
-         rtest['ln_site_mu_resnet'], 'LN'),
         (ax_rtest_cnn, rtest['cnn'], rtest['cnn_site_mu'], rtest['cnn_matched_resnet'],
-         rtest['cnn_site_mu_resnet'], 'Single-site CNN')]:
+         rtest['cnn_site_mu_resnet'], 'Single-site CNN'),
+        (ax_rtest_ln, rtest['ln'], rtest['ln_site_mu'], rtest['ln_matched_resnet'],
+         rtest['ln_site_mu_resnet'], 'LN')]:
     ax.plot(base[::SKIP_N], resnet[::SKIP_N], alpha=.2, marker='.', linestyle='none',
             markersize=MRK, markeredgecolor='none', markerfacecolor='gray')
     ax.plot(base_mu, resnet_mu, alpha=.75, marker='.', linestyle='none',
@@ -208,8 +208,8 @@ for ax, base, base_mu, resnet, resnet_mu, xlabel in [
     ax.set(xlim=rtest_lim, ylim=rtest_lim, xlabel=xlabel,
            xticks=rtest_ticks, yticks=rtest_ticks,
            xticklabels=['0', '0.5', '1'], yticklabels=['0', '0.5', '1'])
-ax_rtest_ln.set(ylabel='ACNet $r_{test}$')
-ax_rtest_cnn.set(yticklabels=[])
+ax_rtest_cnn.set(ylabel='ACNet $r_{test}$')   # leftmost of the pair
+ax_rtest_ln.set(yticklabels=[])
 
 # ---- cumulative variance explained ---------------------------------------- #
 ndims = cvpca['ndims']
@@ -226,8 +226,8 @@ p_data_neural = cvpca['neural']['p_data']
 ylim_ve = p_data_neural.max() * np.array([1e-3, 1.05])
 for ax, tag, key, label in [(ax_pca_neural, 'neural', 'neural', 'PSTH'),
                             (ax_pca_multisite, 'multisite', 'resnet', 'ACNet'),
-                            (ax_pca_ln, 'ln', 'LNmodel', 'LN'),
-                            (ax_pca_cnn, 'cnnfull', 'CNNfull', '1S:CNN')]:
+                            (ax_pca_cnn, 'cnnfull', 'CNNfull', '1S:CNN'),
+                            (ax_pca_ln, 'ln', 'LNmodel', 'LN')]:
     ax.plot(ndims[::SKIP_N], cvpca[key]['p_data'][::SKIP_N], marker='.', linestyle='none',
             markersize=MRK, alpha=.25, markeredgecolor='none', markerfacecolor=COL[tag])
     ax.plot(ndims, cvpca[key]['p_fit'], c=COL[tag], linestyle='-', lw=1.5)
