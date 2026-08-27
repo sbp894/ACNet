@@ -195,23 +195,21 @@ ax_coverage.set(yticks=site_yticks, yticklabels=[v + 1 for v in site_yticks],
 SKIP_N = rtest['skip_n']
 MRK = 4
 rtest_ticks, rtest_lim = [0, .5, 1], [-0.01, 1.01]
-# ACNet on x, the baseline on y: points above the unity line are cells the
-# baseline predicts better, points below are cells ACNet predicts better.
-for ax, base, base_mu, resnet, resnet_mu, ylabel_baseline in [
+for ax, base, base_mu, resnet, resnet_mu, xlabel in [
         (ax_rtest_cnn, rtest['cnn'], rtest['cnn_site_mu'], rtest['cnn_matched_resnet'],
          rtest['cnn_site_mu_resnet'], 'Single-site CNN'),
         (ax_rtest_ln, rtest['ln'], rtest['ln_site_mu'], rtest['ln_matched_resnet'],
          rtest['ln_site_mu_resnet'], 'LN')]:
-    ax.plot(resnet[::SKIP_N], base[::SKIP_N], alpha=.2, marker='.', linestyle='none',
+    ax.plot(base[::SKIP_N], resnet[::SKIP_N], alpha=.2, marker='.', linestyle='none',
             markersize=MRK, markeredgecolor='none', markerfacecolor='gray')
-    ax.plot(resnet_mu, base_mu, alpha=.75, marker='.', linestyle='none',
+    ax.plot(base_mu, resnet_mu, alpha=.75, marker='.', linestyle='none',
             markersize=MRK + 1, markeredgecolor='none', markerfacecolor='k')
     ax.plot(rtest_lim, rtest_lim, 'k--', lw=.8)
-    # each panel's y is a DIFFERENT model, so both keep their own label and ticks
-    ax.set(xlim=rtest_lim, ylim=rtest_lim,
-           xlabel='ACNet $r_{test}$', ylabel=ylabel_baseline,
+    ax.set(xlim=rtest_lim, ylim=rtest_lim, xlabel=xlabel,
            xticks=rtest_ticks, yticks=rtest_ticks,
            xticklabels=['0', '0.5', '1'], yticklabels=['0', '0.5', '1'])
+ax_rtest_cnn.set(ylabel='ACNet $r_{test}$')   # leftmost of the pair
+ax_rtest_ln.set(yticklabels=[])
 
 # ---- cumulative variance explained ---------------------------------------- #
 ndims = cvpca['ndims']
