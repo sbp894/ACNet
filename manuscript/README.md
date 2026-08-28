@@ -78,9 +78,9 @@ their representations are compared **across animals** by RSA over timepoints.
 
 | panel | content |
 |---|---|
-| RDM rows (LMD, REI) | timepoint x timepoint dissimilarity of the manifold, the predicted PSTHs and the recorded PSTHs, seriated by the manifold RDM |
+| RDM rows (two example animals) | timepoint x timepoint dissimilarity of the manifold, the predicted PSTHs and the recorded PSTHs, seriated by the manifold RDM |
 | stim RDM | the same for the stimulus gammatonegram itself |
-| bar | across-animal RSA: MF (manifold), predR (predicted PSTH), trueR (recorded PSTH), MF.GTG (manifold vs stimulus), with the stimulus-bootstrap 95% CI and the recorded-PSTH noise ceiling |
+| bar | across-animal RSA: MF (manifold), predR (predicted PSTH), trueR (recorded PSTH), MF.GTG (manifold vs stimulus), with the stimulus-bootstrap 95% CI |
 
 `fig2.py` rebuilds each encoder from its cached weights, runs it, and asserts the result
 reproduces the cached bootstrap reference statistic before plotting anything. Expected

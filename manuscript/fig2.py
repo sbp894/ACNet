@@ -80,6 +80,9 @@ CBAR_STRIP_CM = CBAR_PAD_CM + CBAR_W_CM + CBAR_TEXT_CM
 FIG_W_CM = PANEL_AREA_W_CM + CBAR_STRIP_CM
 
 RDM_ROW_MODELS = [1, 3]        # which animals get an RDM row (LMD, REI)
+# The RDM rows are two example animals; their identity carries no meaning in this panel,
+# so they are labelled by position. The statistics printout below keeps the real IDs.
+RDM_ROW_LABELS = ['Animal 1', 'Animal 2']
 BAR_LABELS = ['MF', 'predR', 'trueR', 'MF.GTG']
 
 
@@ -263,7 +266,7 @@ def main():
         _show_rdm(sp_top[sp_idx][0], mf_sub, order)
         _show_rdm(sp_top[sp_idx][1], pred_sub, order)
         _show_rdm(sp_top[sp_idx][2], true_sub, order)
-        sp_top[sp_idx][0].set(ylabel=group_names[model_idx])
+        sp_top[sp_idx][0].set(ylabel=RDM_ROW_LABELS[sp_idx])
 
     # the three RDM columns are otherwise indistinguishable. Constrained layout takes
     # a title's height out of its own row, so a title on row 0 alone would make the
@@ -309,19 +312,12 @@ def main():
                                                   np.maximum(hi - means, 0)]),
                     fmt='none', ecolor='black', elinewidth=1, capsize=2.5, zorder=5)
 
-    # noise ceiling over the recorded-PSTH bar only: MF and predR are deterministic
-    # functions of the stimulus, so their ceiling is 1.0. The bar stays at its measured
-    # value -- the ceiling is shown, not applied.
-    ceil = float(np.nanmean(ref['ceiling_pair']))
-    x_true = BAR_LABELS.index('trueR')
-    ax_bar.plot([x_true - 0.4, x_true + 0.4], [ceil, ceil], ls='--', lw=1,
-                color='firebrick', zorder=6)
-    ax_bar.annotate('ceiling', xy=(x_true, ceil), xytext=(0, 2), textcoords='offset points',
-                    ha='center', va='bottom', fontsize=FONT_SIZE - 3, color='firebrick')
-
+    # The recorded-PSTH noise ceiling is NOT drawn. It is still computed and reported by
+    # `print_stats` (mean pairwise ceiling, and trueR as a fraction of it), which is
+    # where the attenuation argument belongs; on the bar it read as a fifth quantity.
     all_vals = np.concatenate([np.atleast_1d(bar_data[k]) for k in BAR_LABELS])
     ax_bar.set(xticks=x_pos, xticklabels=BAR_LABELS, ylabel='Similarity',
-               ylim=(all_vals.min() * 0.7, max(all_vals.max(), ceil) * 1.05))
+               ylim=(all_vals.min() * 0.7, all_vals.max() * 1.05))
 
     # ---- shared colour scale, in its own strip right of the panel area ----
     # Each heatmap is normalised independently (per-panel percentile clip), so an
