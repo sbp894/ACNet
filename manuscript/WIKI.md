@@ -206,9 +206,11 @@ the animals fixed. Both block sizes exclude 0 for all three contrasts.
 
 ## Fig3 / FigS1 / FigS2 — ESC-50
 
-Source: `pytorch_models/MS_AcxManifold/Fig_ESC50.py`, which draws three figures in one
-run (the main summary, an off-diagonal confusion-matrix panel, and a three-row
-confusion-structure supplement). Those become `fig3.py`, `figs1.py` and `figs2.py`.
+Sources: `pytorch_models/MS_AcxManifold/Fig_ESC50.py` (the main summary plus a
+three-row confusion-structure supplement) and `supFig_ESC50_best_clusters.py` (the
+per-subgroup UMAP). Those become `fig3.py` + `figs2.py` and `figs1.py` respectively.
+`Fig_ESC50.py` also draws a standalone off-diagonal confusion-matrix figure, which is
+not ported: it is byte-identical to row A of the three-row supplement.
 
 ### What replaces what
 
@@ -219,7 +221,8 @@ confusion-structure supplement). Those become `fig3.py`, `figs1.py` and `figs2.p
 | `neural_rate_MLP_classifier_REI084_087.pkl` | 33 kB | the same, for the neural classifier |
 | `Across_Layers/xLayers_..._layer{0..5}.pkl` | 6 × 66 kB | two 6×5 accuracy matrices |
 | `UMAP/data/umap_nn50_md0.50.pkl` | 146 kB | `X2d`, `y_labels`, the v4 selection |
-| `sppy`, `seaborn`, `sklearn`, `plot_helpers`, `ESC50_plot_best10` | — | `esc50_lib.py` |
+| `meta/esc50.csv` | 30 kB | the 50 category names in `target` order (subgroups are `target // 10`) |
+| `sppy`, `seaborn`, `sklearn`, `pandas`, `plot_helpers`, `ESC50_plot_best10` | — | `esc50_lib.py` |
 
 Result: **4.42 MB** for all three figures, one cache, no LBHB mount. The three figures
 share `data/fig3.pkl.gz` because they share every input; splitting it would duplicate
@@ -264,6 +267,7 @@ the confusion matrices three times.
 |---|---|
 | every confusion matrix rebuilt from the cached per-fold predictions | exact, all four |
 | live ACNet manifold vs the published embeddings (6 clips) | max rel diff **8.528e-06** |
+| every FigS1 subgroup has exactly 10 categories | asserted per panel |
 | live ACNet gammatonegram vs the published one | max rel diff **5.937e-08** |
 | front-end configuration identifiable | winner 21367× better than runner-up |
 | same-format panels equal in size | asserted via `get_window_extent` in all three scripts |
@@ -302,7 +306,9 @@ worse than one reading the recorded cortical population.**
 ### What would invalidate this cache
 
 - Regenerating the ESC-50 embeddings with a different front end or dB SPL —
-  `fig3.py`'s live check catches it.
+  `fig3.py`'s live check catches it. It is a provenance check only: nothing in Fig3 is
+  drawn from the live run (the demo column that used to show it was dropped on
+  2026-08-27), but every cached number was computed downstream of that manifold.
 - Retraining any of the four classifiers, which changes every prediction, confusion
   matrix and accuracy in the cache. Nothing in the figure would catch that; the cache's
   `meta['sources']` records each source file's size and mtime so it can be checked by

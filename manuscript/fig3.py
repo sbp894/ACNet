@@ -8,11 +8,11 @@ Four classifiers are compared on the same 5-fold split of the same 2000 ESC-50 c
     Shuffled   -- the same backbone with its weights shuffled (architecture-only null)
     Stimulus   -- the gammatonegram ACNet is given as input
 
-Everything except the ACNet forward pass is cached in `data/fig3.pkl.gz`: the
-per-fold predictions, the confusion matrices, the across-layer accuracies and the
-UMAP embedding. The live part is the demo column -- ACNet is loaded, run on stored
-ESC-50 waveforms, and its manifold is checked against the published one before
-anything is drawn.
+Everything the figure plots is cached in `data/fig3.pkl.gz`: the per-fold predictions,
+the confusion matrices, the across-layer accuracies and the UMAP embedding. ACNet is
+still loaded and run on the stored ESC-50 waveforms on every run, as a check that the
+cached numbers belong to this model -- it just is not plotted any more. Set
+VERIFY_WITH_ACNET = False to skip it and avoid importing torch.
 
     python fig3.py            # -> figures/fig3_raw.png and figures/fig3_log.png
 
@@ -44,12 +44,10 @@ OUT_PNG_FMT = os.path.join(HERE, 'figures', 'fig3_{scale}.png')
 CONFMAT_SCALES = ('raw', 'log')
 CONFMAT_VLIM = (0, 40)         # counts; the diagonal saturates, the off-diagonal is 0-6
 
-USE_CACHED_MANIFOLD = False    # True -> plot the cached demo manifold, skip torch
+VERIFY_WITH_ACNET = True       # False -> skip the live model check (and the torch import)
 LIVE_TOL = 1e-3                # live-vs-cached relative tolerance (float32, GPU vs GPU)
 
 PER_CATEGORY = True            # statistics unit: per category (n=50) or per fold (n=5)
-DEMO_CLIP = 0                  # which cached ESC-50 clip the live column shows
-IMAGE_CLIP = (1, 99)           # percentile colour limits for the two demo images
 
 # --------------------------------------------------------------------------- #
 # style
@@ -72,6 +70,7 @@ plt.rcParams.update({
 CM_PER_IN = 2.54
 FIG_W_CM = 7.2 * CM_PER_IN
 FIG_H_CM = 6.4 * CM_PER_IN
+SCHEMATIC_TEXT = 'schematic of the\nfour classifiers'
 # The confusion-matrix row holds four square panels across the figure width, so its
 # height is fixed by the width (~4.4 cm each) no matter what it is given. Asking for
 # more than that only adds white space.
@@ -88,18 +87,19 @@ def load_cache():
         return pickle.load(fh)
 
 
-def compute_live(cache):
+def verify_against_acnet(cache):
     """Run ACNet on the stored ESC-50 clips and check it against the cached manifold.
 
-    Returns (manifold, gtg) for every demo clip, plus the worst relative deviation.
-    This is the only computation in the figure that touches the model; if ACNet, the
-    front end or the stored waveforms ever drift, the assertion below fires instead of
-    the script quietly drawing a different figure.
+    Nothing in the figure is drawn from this -- it is a provenance check. The cached
+    predictions, confusion matrices and accuracies were all computed downstream of the
+    manifold this reproduces, so if ACNet, the front end or the stored waveforms ever
+    drift, the assertion below fires instead of the script quietly drawing a figure
+    whose numbers belong to a different model.
     """
     demo = cache['demo']
-    if USE_CACHED_MANIFOLD:
-        print("USE_CACHED_MANIFOLD -- plotting the cached demo manifold, torch not loaded")
-        return demo['mf_ref'], demo['gtg_ref'], None, None
+    if not VERIFY_WITH_ACNET:
+        print("VERIFY_WITH_ACNET = False -- the cached numbers are plotted unchecked")
+        return None, None
 
     import torch                                   # noqa: PLC0415
     import acnet_model as sa                       # noqa: PLC0415
@@ -128,7 +128,7 @@ def compute_live(cache):
     assert err_mf < LIVE_TOL and err_gtg < LIVE_TOL, (
         f"live ACNet does not reproduce the published ESC-50 manifold "
         f"(manifold {err_mf:.3e}, gtg {err_gtg:.3e}, tol {LIVE_TOL:.0e})")
-    return mf_live, gtg_live, err_mf, err_gtg
+    return err_mf, err_gtg
 
 
 def verify_confmats(cache):
@@ -168,7 +168,7 @@ def assert_equal_panels(fig, axes, label):
 
 
 # --------------------------------------------------------------------------- #
-def draw(cache, scale, mf_live, gtg_live):
+def draw(cache, scale):
     fig = plt.figure(layout='constrained',
                      figsize=(FIG_W_CM / CM_PER_IN, FIG_H_CM / CM_PER_IN))
     gs = fig.add_gridspec(3, 1, height_ratios=ROW_HEIGHTS)
@@ -177,7 +177,7 @@ def draw(cache, scale, mf_live, gtg_live):
     # sees it, which is how the demo column ended up floating over the row.
     sf_top_l, sf_top_r = fig.add_subfigure(gs[0]).subfigures(1, 2, width_ratios=(2, 3))
     ax_umap = sf_top_l.subplots(1, 1)
-    ax_gtg, ax_mf = sf_top_r.subplots(2, 1, sharex=True)
+    ax_schematic = sf_top_r.subplots(1, 1)
     sf_mid = fig.add_subfigure(gs[1])
     sp_mid = sf_mid.subplots(1, 4)
     sp_bot = fig.add_subfigure(gs[2]).subplots(1, 4, width_ratios=BOT_WIDTHS)
@@ -186,31 +186,12 @@ def draw(cache, scale, mf_live, gtg_live):
     umap = cache['umap']
     el.plot_best10_panel(ax_umap, umap['X2d'], umap['y_labels'], umap['selection'])
 
-    # ---- top right: the live ACNet run -------------------------------------
-    demo = cache['demo']
-    names = cache['category_names']
-    clip = DEMO_CLIP
-    label = ('' if names is None
-             else f" ({names[demo['targets'][clip]].replace('_', ' ')})")
-    dur_ms = 1e3 * gtg_live[clip].shape[0] / 100.0
-
-    for ax, mat, title, ylabel in [
-            (ax_gtg, gtg_live[clip], f'Stimulus gammatonegram{label}', 'CF chan'),
-            (ax_mf, mf_live[clip], 'ACNet manifold (live)', 'manifold dim')]:
-        # Percentile clip: a handful of units run far above the rest, and on a shared
-        # linear scale they flatten everything else to black.
-        vmin, vmax = np.percentile(mat, IMAGE_CLIP)
-        ax.imshow(mat.T, origin='lower', aspect='auto', extent=(0, dur_ms, 0, mat.shape[1]),
-                  cmap='magma', vmin=vmin, vmax=vmax, rasterized=True)
-        ax.set(ylabel=ylabel, title=title)
-        el.set_border(ax, 0.4)
-    # Constrained layout takes an axes' decorations out of its own gridspec cell, so the
-    # bottom image would come out shorter than the top one by the height of the x tick
-    # labels + xlabel. Give the top one the same decoration height (blank label, and the
-    # tick labels are hidden but still reserved) so the pair renders equal.
-    ax_mf.set(xlabel='time (ms)')
-    ax_gtg.set(xlabel=' ')
-    ax_gtg.tick_params(axis='x', labelbottom=False, labelcolor='none')
+    # ---- top right: reserved for the classifier schematic -------------------
+    # The four-classifier schematic is drawn by hand; this keeps its slot at the size
+    # the rest of the layout assumes, exactly as the source script did.
+    ax_schematic.text(0.5, 0.5, SCHEMATIC_TEXT, ha='center', va='center',
+                      transform=ax_schematic.transAxes)
+    ax_schematic.axis('off')
 
     # ---- middle: confusion matrices ----------------------------------------
     for idx, name in enumerate(cache['model_names']):
@@ -258,7 +239,6 @@ def draw(cache, scale, mf_live, gtg_live):
     sp_bot[3].set(xlabel='Layer', ylabel='Accuracy', title='Accuracy across layers')
 
     # Same-format groups: the four confusion matrices, and the two alignment bars.
-    assert_equal_panels(fig, [ax_gtg, ax_mf], 'demo images')
     assert_equal_panels(fig, list(sp_mid), 'confusion matrices')
     assert_equal_panels(fig, [sp_bot[1], sp_bot[2]], 'alignment bars')
 
@@ -355,9 +335,9 @@ def main():
     cache = load_cache()
     print(f"cache built {cache['meta']['built']} from {cache['meta']['source_script']}")
     verify_confmats(cache)
-    mf_live, gtg_live, _, _ = compute_live(cache)
+    verify_against_acnet(cache)
     for scale in CONFMAT_SCALES:
-        draw(cache, scale, mf_live, gtg_live)
+        draw(cache, scale)
     print_stats(cache)
 
 

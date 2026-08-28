@@ -18,6 +18,7 @@ from scipy.stats import wilcoxon, spearmanr
 import matplotlib.colors as mcolors
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Ellipse
+from matplotlib.ticker import MaxNLocator
 
 # --------------------------------------------------------------------------- #
 # constants
@@ -48,6 +49,10 @@ QUAL10 = ListedColormap([
 V4_SELECTION = ['sheep', 'cat', 'thunderstorm', 'crackling_fire',
                 'brushing_teeth', 'snoring', 'can_opening', 'door_wood_knock',
                 'chainsaw', 'train']
+
+# ESC-50 ships its 50 categories in five blocks of ten, one per subgroup, ordered by
+# `target`; that is the only place the subgroup of a category is recorded.
+ESC50_GROUPS = ['Animals', 'Natural Soundscape', 'Human', 'Interior', 'Exterior']
 
 ANNOT_FS = 6
 N_STD = 1.0
@@ -291,6 +296,25 @@ def _draw_ellipse(ax, pts, color, n_std=N_STD, alpha_fill=0.18, lw=1.0):
     ax.add_patch(ell)
 
 
+def _draw_ellipse_outline(ax, pts, color, n_std=N_STD, lw=2.0):
+    """Outline-only confidence ellipse -- used where filled ellipses would stack up."""
+    if len(pts) < 3:
+        return
+    cov = np.cov(pts.T)
+    if np.linalg.matrix_rank(cov) < 2:
+        return
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    eigvals = eigvals[::-1]
+    eigvecs = eigvecs[:, ::-1]
+    ell = Ellipse(
+        xy=pts.mean(axis=0),
+        width=2 * n_std * np.sqrt(eigvals[0]),
+        height=2 * n_std * np.sqrt(eigvals[1]),
+        angle=np.degrees(np.arctan2(eigvecs[1, 0], eigvecs[0, 0])),
+        facecolor='none', edgecolor=color, linewidth=lw, zorder=2)
+    ax.add_patch(ell)
+
+
 def _ellipse_boundary_point(pts, direction, n_std=N_STD):
     """The point on a cluster's confidence ellipse in *direction*, for label placement."""
     if len(pts) < 3:
@@ -310,8 +334,14 @@ def _ellipse_boundary_point(pts, direction, n_std=N_STD):
     return pts.mean(axis=0) + eigvecs @ (u_local / denom)  # and back
 
 
-def _resolve_text_overlap(texts, cents, ax, n_iter=300, step_px=3.0, conn_thresh_px=6):
-    """Force-directed label repulsion using real rendered bboxes, not width guesses."""
+def _resolve_text_overlap(texts, cents, ax, n_iter=300, step_px=3.0, conn_thresh_px=6,
+                          clamp_to_axes=True, draw_connectors=True):
+    """Force-directed label repulsion using real rendered bboxes, not width guesses.
+
+    `clamp_to_axes` pulls any label the repulsion pushed past the axes frame back
+    inside it, which the repulsion alone will not do -- with ten labels in a crowded
+    panel the outermost ones are always driven outwards.
+    """
     fig = ax.get_figure()
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
@@ -336,6 +366,26 @@ def _resolve_text_overlap(texts, cents, ax, n_iter=300, step_px=3.0, conn_thresh
         if not moved:
             break
 
+    if clamp_to_axes:
+        fig.canvas.draw()
+        ax_box = ax.get_window_extent(renderer)
+        for txt in texts:
+            bb = txt.get_window_extent(renderer)
+            shift = np.zeros(2)
+            if bb.x1 > ax_box.x1:
+                shift[0] = ax_box.x1 - bb.x1
+            if bb.x0 < ax_box.x0:
+                shift[0] = ax_box.x0 - bb.x0
+            if bb.y1 > ax_box.y1:
+                shift[1] = ax_box.y1 - bb.y1
+            if bb.y0 < ax_box.y0:
+                shift[1] = ax_box.y0 - bb.y0
+            if np.any(shift != 0):
+                txt.set_position(
+                    tuple(to_data(np.array(to_disp(txt.get_position())) + shift)))
+
+    if not draw_connectors:
+        return
     for txt, (cx, cy) in zip(texts, cents):
         tx, ty = txt.get_position()
         if np.linalg.norm(np.array(to_disp((tx, ty)))
@@ -382,6 +432,60 @@ def plot_best10_panel(ax, x2d, y_labels, selection=V4_SELECTION):
              for cat in selection]
     _resolve_text_overlap(texts, [cents[cat] for cat in selection], ax)
     ax.set(xlabel='UMAP 1', ylabel='UMAP 2')
+
+
+def category_groups(category_names):
+    """Map every ESC-50 category name to its subgroup, from its `target` index."""
+    return {name: ESC50_GROUPS[idx // 10] for idx, name in enumerate(category_names)}
+
+
+def plot_subgroup_panel(ax, x2d, y_labels, group_categories, selection_colors,
+                        selection_set, title, xlim, ylim, show_ylabel=False,
+                        annot_fs=None):
+    """One ESC-50 subgroup: every category in it, the two selected ones emphasised.
+
+    Selected categories get a thick outline ellipse, full-alpha dots and a bold label;
+    the rest get a thin ellipse, dim dots and a normal label. Both are drawn -- the
+    point of the panel is that the selected pair separates *within* a subgroup whose
+    other members overlap, which a panel showing only the pair could not make.
+    """
+    annot_fs = ANNOT_FS if annot_fs is None else annot_fs
+    local_colors = {cat: QUAL10(i) for i, cat in enumerate(group_categories)}
+
+    def _col(cat):
+        return selection_colors[cat] if cat in selection_set else local_colors[cat]
+
+    cents = {}
+    # Non-selected first so the emphasised pair lands on top of it.
+    for is_sel_pass in (False, True):
+        for cat in group_categories:
+            if (cat in selection_set) != is_sel_pass:
+                continue
+            pts = x2d[y_labels == cat]
+            col = _col(cat)
+            ax.scatter(pts[:, 0], pts[:, 1], color=col,
+                       s=5 if is_sel_pass else 2,
+                       alpha=0.85 if is_sel_pass else 0.30,
+                       linewidths=0, zorder=3 if is_sel_pass else 1, rasterized=True)
+            _draw_ellipse_outline(ax, pts, color=col, n_std=N_STD,
+                                  lw=2.0 if is_sel_pass else 0.6)
+            cents[cat] = pts.mean(axis=0)
+
+    texts = [ax.text(*cents[cat], cat, fontsize=annot_fs, color=_col(cat),
+                     fontweight='bold' if cat in selection_set else 'normal',
+                     zorder=10, clip_on=False,
+                     bbox=dict(facecolor='white', alpha=0.65, edgecolor='none', pad=0.5))
+             for cat in group_categories]
+    _resolve_text_overlap(texts, [cents[cat] for cat in group_categories], ax)
+
+    ax.set(xlim=xlim, ylim=ylim, title=title, xlabel='UMAP 1',
+           ylabel='UMAP 2' if show_ylabel else '')
+    ax.set_aspect('equal', adjustable='box')
+    ax.tick_params(length=2, pad=3, labelleft=show_ylabel)
+    ax.xaxis.set_major_locator(MaxNLocator(4))
+    ax.yaxis.set_major_locator(MaxNLocator(4))
+    for spine in ax.spines.values():
+        spine.set_linewidth(0.5)
 
 
 # --------------------------------------------------------------------------- #

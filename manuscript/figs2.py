@@ -2,7 +2,9 @@
 Manuscript Fig S2 -- do the model classifiers confuse the same categories as the
 neural one?
 
-(A) the four off-diagonal confusion matrices, as in FigS1.
+(A) the four confusion matrices with the diagonal masked out. The diagonal runs to
+    ~40 against off-diagonal cells of 0-13, so on the full matrix the confusion
+    structure is invisible.
 (B) each model's off-diagonal cell counts against the neural classifier's, cell by
     cell. A positive slope means the two classifiers make the same *errors*, not just
     the same number of them.
@@ -94,8 +96,9 @@ def draw(cache, scale):
         else:
             ax_a[idx].tick_params(labelleft=False)
 
-    # See figs1.py: attached to all four panels so they shrink together, and sized
-    # against the panels instead of the row height.
+    # Attached to all four panels so the space it takes comes off each of them equally
+    # and they stay identical -- and it is sized against the panels rather than the row
+    # height, which a dedicated `cax` gridspec column cannot do.
     ticks = el.confmat_ticks(scale, *vlim)
     cbar = sf_a.colorbar(img, ax=list(ax_a), location='right', shrink=0.72, aspect=14,
                          pad=0.015)

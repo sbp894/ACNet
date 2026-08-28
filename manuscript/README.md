@@ -16,16 +16,17 @@ cd manuscript
 python fig1.py            # -> figures/fig1.png (300 dpi)
 python fig2.py            # -> figures/fig2.png (300 dpi)
 python fig3.py            # -> figures/fig3_raw.png  + fig3_log.png
-python figs1.py           # -> figures/figs1_raw.png + figs1_log.png
+python figs1.py           # -> figures/figs1.png
 python figs2.py           # -> figures/figs2_raw.png + figs2_log.png
 ```
 
-The three ESC-50 scripts each write **two** PNGs, one per confusion-matrix colour
+`fig3.py` and `figs2.py` each write **two** PNGs, one per confusion-matrix colour
 scale (`CONFMAT_SCALES = ('raw', 'log')` at the top of each). `raw` is linear in
 counts; `log` is `log10(1 + count)` with the colorbar still labelled in counts. The
 diagonal runs to ~40 while a typical off-diagonal cell is 0-3, so the off-diagonal
 structure -- the thing the neural-alignment panels are about -- is only visible on
-the log scale. Set `CONFMAT_SCALES = ('log',)` to write just one.
+the log scale. Set `CONFMAT_SCALES = ('log',)` to write just one. FigS1 has no
+confusion matrices, so it writes a single PNG.
 
 Requirements: `numpy`, `scipy`, `matplotlib`, plus `torch`/`torchaudio` for the
 live prediction (same environment as the rest of the repo — see
@@ -49,7 +50,7 @@ manuscript/
 ├── fig1.py                     # the figure script
 ├── fig2.py                     # the figure script
 ├── fig3.py                     # ESC-50 categorisation
-├── figs1.py                    # supplement: off-diagonal confusion matrices
+├── figs1.py                    # supplement: the manifold UMAP, one panel per ESC-50 subgroup
 ├── figs2.py                    # supplement: confusion structure vs the neural classifier
 ├── rsa_lib.py                  # Fig2 analysis primitives, shared by fig2.py and its builder
 ├── esc50_lib.py                # Fig3/S1/S2 primitives, shared by all three and the builder
@@ -131,7 +132,7 @@ embeddings), **Shuffled** (the same architecture with shuffled weights) and
 | panel | content |
 |---|---|
 | UMAP | the manifold's 2-D embedding of all 2000 clips, with the 10 best-clustering categories drawn |
-| demo column | one stored ESC-50 clip: its gammatonegram and the manifold ACNet produces for it, **computed live** |
+| schematic | the four classifiers (drawn by hand; the script reserves the slot) |
 | confusion matrices | one per classifier, on the chosen colour scale |
 | accuracy | 5-fold test accuracy, chance = 1/50 |
 | neural alignment | how often each model classifier predicts the same class as the neural one -- over all predictions, and over the model's errors only |
@@ -139,7 +140,10 @@ embeddings), **Shuffled** (the same architecture with shuffled weights) and
 
 `fig3.py` rebuilds every confusion matrix from the cached per-fold predictions, then
 loads ACNet, runs it on the stored waveforms and checks the manifold against the
-published one before drawing anything. Expected output:
+published one. That check is not plotted -- it is there because every cached number
+was computed downstream of that manifold, so if ACNet or the front end ever drifts
+the script aborts rather than drawing numbers that belong to a different model. Set
+`VERIFY_WITH_ACNET = False` to skip it and avoid importing torch. Expected output:
 
 ```
 confusion matrices: all four rebuilt from the cached predictions, exact match
@@ -160,7 +164,13 @@ layers     Manifold accuracy rises monotonically 0.308 -> 0.454, Spearman r = 1.
            Shuffled shows no trend (r = -0.37, p_bonf = 0.94)
 ```
 
-FigS2 adds the cell-by-cell comparison behind the alignment claim: the manifold's
+**FigS1** expands the UMAP panel: one square panel per ESC-50 subgroup (Animals,
+Natural Soundscape, Human, Interior, Exterior), showing all ten of that subgroup's
+categories with the two best-separating ones emphasised. All five share one set of
+axis limits. Drawing the whole subgroup is what shows the emphasised pair separating
+*within* a set of categories that otherwise overlap.
+
+**FigS2** adds the cell-by-cell comparison behind the alignment claim: the manifold's
 confusion matrix correlates with the neural one at r = 0.56 off the diagonal and
 r = 0.78 on it, against r = 0.34 / 0.45-0.46 for both controls.
 
