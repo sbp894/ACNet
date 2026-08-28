@@ -15,7 +15,17 @@ recording coverage — is pre-extracted, so no LBHB data mount is needed.
 cd manuscript
 python fig1.py            # -> figures/fig1.png (300 dpi)
 python fig2.py            # -> figures/fig2.png (300 dpi)
+python fig3.py            # -> figures/fig3_raw.png  + fig3_log.png
+python figs1.py           # -> figures/figs1_raw.png + figs1_log.png
+python figs2.py           # -> figures/figs2_raw.png + figs2_log.png
 ```
+
+The three ESC-50 scripts each write **two** PNGs, one per confusion-matrix colour
+scale (`CONFMAT_SCALES = ('raw', 'log')` at the top of each). `raw` is linear in
+counts; `log` is `log10(1 + count)` with the colorbar still labelled in counts. The
+diagonal runs to ~40 while a typical off-diagonal cell is 0-3, so the off-diagonal
+structure -- the thing the neural-alignment panels are about -- is only visible on
+the log scale. Set `CONFMAT_SCALES = ('log',)` to write just one.
 
 Requirements: `numpy`, `scipy`, `matplotlib`, plus `torch`/`torchaudio` for the
 live prediction (same environment as the rest of the repo — see
@@ -38,10 +48,15 @@ live vs cached: gtg r=1.00000000  psth r=1.00000000  max|dPSTH|=1.14e-07
 manuscript/
 ├── fig1.py                     # the figure script
 ├── fig2.py                     # the figure script
+├── fig3.py                     # ESC-50 categorisation
+├── figs1.py                    # supplement: off-diagonal confusion matrices
+├── figs2.py                    # supplement: confusion structure vs the neural classifier
 ├── rsa_lib.py                  # Fig2 analysis primitives, shared by fig2.py and its builder
+├── esc50_lib.py                # Fig3/S1/S2 primitives, shared by all three and the builder
 ├── data/
 │   ├── fig1.pkl                # 4.3 MB: every number Fig1 plots + the demo waveform
-│   └── fig2.pkl.gz             # 38 MB: four encoders, the recorded PSTHs, the stimulus
+│   ├── fig2.pkl.gz             # 38 MB: four encoders, the recorded PSTHs, the stimulus
+│   └── fig3.pkl.gz             # 4.4 MB: ESC-50 predictions, confusion matrices, UMAP, demo clips
 ├── figures/                    # output PNGs
 └── build/
     ├── build_fig<N>_cache.py   # one-time cache builders -- LBHB paths, not needed to plot
@@ -105,5 +120,57 @@ full-resolution RDMs instead of reading them from the cache. It is off by defaul
 because it builds 13 distance matrices over 11400 timepoints -- tens of minutes and a
 few GB -- while the bootstrap-reference check above already exercises the live models
 end to end.
+
+## What Fig3 shows
+
+Four classifiers over the same 5-fold split of the same 2000 ESC-50 clips: **Neural**
+(recorded ferret A1/PEG rates, site REI084_087), **Manifold** (ACNet's backbone
+embeddings), **Shuffled** (the same architecture with shuffled weights) and
+**Stimulus** (the gammatonegram ACNet is given).
+
+| panel | content |
+|---|---|
+| UMAP | the manifold's 2-D embedding of all 2000 clips, with the 10 best-clustering categories drawn |
+| demo column | one stored ESC-50 clip: its gammatonegram and the manifold ACNet produces for it, **computed live** |
+| confusion matrices | one per classifier, on the chosen colour scale |
+| accuracy | 5-fold test accuracy, chance = 1/50 |
+| neural alignment | how often each model classifier predicts the same class as the neural one -- over all predictions, and over the model's errors only |
+| layer profile | ESC-50 accuracy from each of ACNet's six backbone layers, against the shuffled-weight null |
+
+`fig3.py` rebuilds every confusion matrix from the cached per-fold predictions, then
+loads ACNet, runs it on the stored waveforms and checks the manifold against the
+published one before drawing anything. Expected output:
+
+```
+confusion matrices: all four rebuilt from the cached predictions, exact match
+live vs cached (6 ESC-50 clips): max rel |d manifold|=8.528e-06  max rel |d gtg|=5.937e-08
+```
+
+The claims, recomputed and printed on every run (per category, n=50, Wilcoxon
+signed-rank, Bonferroni-corrected within each family):
+
+```
+accuracy   Manifold 0.47  ~  Neural 0.45  >  Stimulus 0.31  >  Shuffled 0.20
+           Neural != Manifold  p_bonf = 1        (n.s. -- the manifold matches cortex)
+           Manifold > Stimulus p_bonf = 5.8e-09
+           Manifold > Shuffled p_bonf = 4.4e-15
+alignment  all predictions   Manifold 0.44 > Stimulus 0.28 > Shuffled 0.22  (both p_bonf < 1.7e-08)
+           errors only       Manifold 0.22 > Stimulus 0.12 > Shuffled 0.09  (both p_bonf < 9.0e-08)
+layers     Manifold accuracy rises monotonically 0.308 -> 0.454, Spearman r = 1.00
+           Shuffled shows no trend (r = -0.37, p_bonf = 0.94)
+```
+
+FigS2 adds the cell-by-cell comparison behind the alignment claim: the manifold's
+confusion matrix correlates with the neural one at r = 0.56 off the diagonal and
+r = 0.78 on it, against r = 0.34 / 0.45-0.46 for both controls.
+
+## Known caveat, Fig3
+
+The neural and the model classifiers were run over the same 5-fold split, but **4 of
+2000 samples (0.20 %, all in fold 4) sit at a different position within their fold**.
+The alignment analysis pairs the two runs positionally, so those four entries compare
+predictions on two different clips. The builder measures this and `fig3.py` prints it
+on every run. It is 0.2 % of the data and does not move any number reported above,
+but it is recorded rather than silently rounded away.
 
 See `WIKI.md` for provenance and the verification record.

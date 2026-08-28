@@ -1,0 +1,68 @@
+build_fig3_cache -- 2026-08-27 17:38:30
+host=rhino  python=3.11.13  numpy=2.3.1  torch=2.9.0.dev20250811+cu128
+
+==========================================================================
+1. classifier outputs
+==========================================================================
+  Neural    folds=5 n_test=400 r_test=0.4610 +/- 0.0455 confmat sum=2000
+  Manifold  folds=5 n_test=400 r_test=0.4775 +/- 0.0436 confmat sum=2000
+  Shuffled  folds=5 n_test=400 r_test=0.2190 +/- 0.0155 confmat sum=2000
+  Stimulus  folds=5 n_test=400 r_test=0.2925 +/- 0.0146 confmat sum=2000
+  fold alignment: same 5-fold split; 4/2000 samples (0.20 %) sit at a different within-fold position
+    Manifold  per-fold mismatches: [0, 0, 0, 0, 4]
+    Shuffled  per-fold mismatches: [0, 0, 0, 0, 4]
+    Stimulus  per-fold mismatches: [0, 0, 0, 0, 4]
+
+==========================================================================
+2. across-layer classifiers
+==========================================================================
+  6 layers x 5 folds
+    layer 0: data 0.3085  shuffled 0.2310
+    layer 1: data 0.3430  shuffled 0.2490
+    layer 2: data 0.3745  shuffled 0.2530
+    layer 3: data 0.4260  shuffled 0.2445
+    layer 4: data 0.4395  shuffled 0.2395
+    layer 5: data 0.4545  shuffled 0.2200
+
+==========================================================================
+3. UMAP embedding
+==========================================================================
+  X2d (2000, 2)  nn=50 md=0.50 score=3.5924
+
+==========================================================================
+4. ESC-50 category names
+==========================================================================
+  0..4: ['dog', 'rooster', 'pig', 'cow', 'frog']
+
+==========================================================================
+5. demo clips (waveform + reference manifold)
+==========================================================================
+/auto/users/satya/bin/miniconda3_25/envs/ptn/lib/python3.11/site-packages/torchaudio/_backend/utils.py:213: UserWarning: In 2.9, this function's implementation will be changed to use torchaudio.load_with_torchcodec` under the hood. Some parameters like ``normalize``, ``format``, ``buffer_size``, and ``backend`` will be ignored. We recommend that you port your code to rely directly on TorchCodec's decoder instead: https://docs.pytorch.org/torchcodec/stable/generated/torchcodec.decoders.AudioDecoder.html#torchcodec.decoders.AudioDecoder.
+  warnings.warn(
+  5_198891_C_8_seg3.wav  target=8 (sheep)  wav (1, 22050) @ 44100 Hz  mf (50, 200)
+  4_133047_A_5_seg3.wav  target=5 (cat)  wav (1, 22050) @ 44100 Hz  mf (50, 200)
+  3_123224_A_19_seg8.wav  target=19 (thunderstorm)  wav (1, 22050) @ 44100 Hz  mf (50, 200)
+  2_28314_A_12_seg3.wav  target=12 (crackling_fire)  wav (1, 22050) @ 44100 Hz  mf (50, 200)
+  2_86160_A_27_seg8.wav  target=27 (brushing_teeth)  wav (1, 22050) @ 44100 Hz  mf (50, 200)
+  1_27403_A_28_seg5.wav  target=28 (snoring)  wav (1, 22050) @ 44100 Hz  mf (50, 200)
+  time-averaged manifold over all clips: (2000, 200)
+
+==========================================================================
+6. front-end configuration (measured, not assumed)
+==========================================================================
+Loaded ACNet v1.0.0
+  ACNet v1.0.0 on cuda; compress from the dump = 'log10x'
+  {'lbhb_mode': False, 'level_mode': 'exact'}  max rel |d manifold| = 8.530e-06  max rel |d gtg| = 5.937e-08
+  {'lbhb_mode': True, 'level_mode': 'exact'}  max rel |d manifold| = 1.823e-01  max rel |d gtg| = 5.675e-02
+  {'lbhb_mode': True, 'level_mode': 'approx'}  max rel |d manifold| = 7.425e-01  max rel |d gtg| = 6.619e-01
+
+  -> {'lbhb_mode': False, 'level_mode': 'exact'}  (runner-up is 21367x worse)
+
+==========================================================================
+7. write
+==========================================================================
+  wrote /auto/users/satya/code/projects_getting_started/ACNet_v1/manuscript/data/fig3.pkl.gz  (4.42 MB)
+
+==========================================================================
+done
+==========================================================================

@@ -204,8 +204,117 @@ the animals fixed. Both block sizes exclude 0 for all three contrasts.
 - Changing `MODEL_VAREXP`, `DATA_VAREXP` or `SIM_MEASURE` in `rsa_lib.py`. These are the
   figure's identity, not free parameters; the cached bootstrap was built under them.
 
+## Fig3 / FigS1 / FigS2 — ESC-50
+
+Source: `pytorch_models/MS_AcxManifold/Fig_ESC50.py`, which draws three figures in one
+run (the main summary, an off-diagonal confusion-matrix panel, and a three-row
+confusion-structure supplement). Those become `fig3.py`, `figs1.py` and `figs2.py`.
+
+### What replaces what
+
+| the source needed | size | the cache stores |
+|---|---|---|
+| `ESC50_500ms_60db_RNembed_UR1rate.pkl` | 213 MB | 6 demo waveforms + their reference manifold, and the 2000×200 time-averaged manifold |
+| `MFembed_gtg_2L_MLP_..._embeddings.pkl` | 3.1 MB | per-fold predictions, `r_test`, and the 3×5 classifier state dicts |
+| `neural_rate_MLP_classifier_REI084_087.pkl` | 33 kB | the same, for the neural classifier |
+| `Across_Layers/xLayers_..._layer{0..5}.pkl` | 6 × 66 kB | two 6×5 accuracy matrices |
+| `UMAP/data/umap_nn50_md0.50.pkl` | 146 kB | `X2d`, `y_labels`, the v4 selection |
+| `sppy`, `seaborn`, `sklearn`, `plot_helpers`, `ESC50_plot_best10` | — | `esc50_lib.py` |
+
+Result: **4.42 MB** for all three figures, one cache, no LBHB mount. The three figures
+share `data/fig3.pkl.gz` because they share every input; splitting it would duplicate
+the confusion matrices three times.
+
+### Three things resolved rather than assumed
+
+1. **Which front end produced the published ESC-50 embeddings.** The 213 MB dump
+   records `dbspl=60` and the model's compression, but not `lbhb_mode` / `level_mode`,
+   and the generating script's defaults are two releases old. The builder runs the demo
+   clips through every valid combination and keeps the winner:
+
+   | config | max rel \|Δ manifold\| |
+   |---|---|
+   | `lbhb_mode=False, level_mode='exact'` | **8.530e-06** |
+   | `lbhb_mode=True, level_mode='exact'` | 1.823e-01 |
+   | `lbhb_mode=True, level_mode='approx'` | 7.425e-01 |
+
+   Unambiguous — the runner-up is 21367× worse. **The published ESC-50 embeddings were
+   made with `lbhb_mode=False`**, i.e. without the baphy peak limiter. That contradicts
+   the assumption carried in the `acnet_frontend` notes that this generation shared the
+   `lbhb_mode=True` bug of the 2026-08 MR/xLayers dumps; it does not.
+
+2. **Whether the neural and model classifiers share a fold split.** They do — but not
+   exactly. Folds 0-3 are identical element for element; fold 4 has the same 400 clips
+   in a slightly different order, so **4 of 2000 samples (0.20 %)** sit at a different
+   within-fold position. The source script pairs the two runs positionally, so those
+   four alignment entries compare predictions on two different clips. The builder
+   asserts the multisets match, counts the displaced samples, and `fig3.py` prints the
+   count on every run. At 0.2 % it changes nothing, but it is now visible instead of
+   assumed away.
+
+3. **Confusion-matrix orientation.** The source calls sklearn's
+   `confusion_matrix(pred, true)` — arguments in the opposite order to sklearn's
+   `(y_true, y_pred)` signature. That makes rows *predicted* and columns *true*, which
+   is what its axis labels say. `esc50_lib.confusion_counts(pred, true)` keeps that
+   orientation deliberately and says so in its docstring.
+
+### Verification record
+
+| check | result |
+|---|---|
+| every confusion matrix rebuilt from the cached per-fold predictions | exact, all four |
+| live ACNet manifold vs the published embeddings (6 clips) | max rel diff **8.528e-06** |
+| live ACNet gammatonegram vs the published one | max rel diff **5.937e-08** |
+| front-end configuration identifiable | winner 21367× better than runner-up |
+| same-format panels equal in size | asserted via `get_window_extent` in all three scripts |
+
+### Measured values (per category, n=50)
+
+```
+accuracy    Neural 0.45   Manifold 0.47   Shuffled 0.20   Stimulus 0.31
+            Neural != Manifold  W=506    p=0.208     p_bonf=1          n.s.
+            Manifold > Shuffled W=1275   p=8.9e-16   p_bonf=4.4e-15    *
+            Manifold > Stimulus W=1190   p=1.2e-09   p_bonf=5.8e-09    *
+alignment   all       Manifold 0.44   Shuffled 0.22   Stimulus 0.28
+            errors    Manifold 0.22   Shuffled 0.09   Stimulus 0.12
+            all four Manifold-vs-control tests p_bonf < 1.7e-08
+layers      Manifold [0.308 0.343 0.374 0.426 0.439 0.454]  Spearman r=1.00
+            Shuffled [0.231 0.249 0.253 0.244 0.239 0.220]  r=-0.37, p_bonf=0.94  n.s.
+confusion   cell-by-cell Pearson r against the neural classifier (FigS2)
+            off-diagonal (n=2450)  Manifold 0.56   Shuffled 0.34   Stimulus 0.34
+            diagonal     (n=50)    Manifold 0.78   Shuffled 0.45   Stimulus 0.46
+```
+
+### What the statistics can and cannot say
+
+The per-category unit (n=50) is the default because the per-fold unit gives n=5, where
+the Wilcoxon p-floor is 0.031 and nothing survives Bonferroni. Set `PER_CATEGORY =
+False` in `fig3.py` to switch. Categories are not independent of each other in the way
+folds are, so the per-category p-values are anti-conservative; they are reported as
+evidence of ordering, not as calibrated error rates. The ordering itself
+(Manifold ≈ Neural > Stimulus > Shuffled) holds under both units.
+
+`Neural != Manifold` being non-significant is the claim the figure is making, and a
+non-significant two-sided test is not evidence of equivalence. What it supports is the
+weaker, correct statement: **a classifier reading ACNet's manifold is not measurably
+worse than one reading the recorded cortical population.**
+
+### What would invalidate this cache
+
+- Regenerating the ESC-50 embeddings with a different front end or dB SPL —
+  `fig3.py`'s live check catches it.
+- Retraining any of the four classifiers, which changes every prediction, confusion
+  matrix and accuracy in the cache. Nothing in the figure would catch that; the cache's
+  `meta['sources']` records each source file's size and mtime so it can be checked by
+  hand.
+- Re-running the UMAP grid search. `X2d` is cached, not recomputed, so the panel is
+  frozen at `nn=50, md=0.50, score=3.5924`.
+- Changing `CONFMAT_VLIM` in `fig3.py` (0..40, chosen so the diagonal saturates rather
+  than compressing everything else) — that is a display decision, not a free parameter.
+
 ## Related
 
 - `../README.md` — the ACNet model itself and its public API.
-- `pytorch_models/MS_AcxManifold/Fig1_stim_resp_rtest.py` — the original figure
-  script this was ported from; still the source of truth for panel content.
+- `pytorch_models/MS_AcxManifold/Fig1_stim_resp_rtest.py`,
+  `Fig_MF_RSA_xanimals.py`, `Fig_ESC50.py` — the original figure scripts these were
+  ported from; still the source of truth for panel content.
